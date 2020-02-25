@@ -30,6 +30,7 @@ import json
 import logging
 import logging.handlers
 import inputstreamhelper
+import resources.lib.common.vars
 
 # The cookielib module has been renamed to http.cookiejar in Python 3
 import cookielib
@@ -82,7 +83,8 @@ logger.debug('[ Addon settings ] _config_DebugEnabled_ = ' + str(_config_DebugEn
 logger.debug('[ Addon settings ] _config_ShowTitleInChannelList_ = ' + str(_config_ShowTitleInChannelList_))
 
 # UserAgent exposed by this addon
-userAgent = 'Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0'
+#userAgent = 'Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0'
+userAgent = resources.lib.common.vars.__userAgent__
 
 # Kodi uses the following sys.argv arguments:
 # [0] - The base URL for this add-on, e.g. 'plugin://plugin.video.demo1/'.

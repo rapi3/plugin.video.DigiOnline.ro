@@ -16,39 +16,3 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 #
-
-
-def get_cached_categories():
-    ####
-    #
-    # Get the list of cached video categories.
-    #
-    # Return: The list of cached video categories
-    #
-    ####
-
-    logger.debug('Enter function')
-
-    logger.debug('Exit function')
-    return _cached_categories_list_
-
-
-def get_cached_channels(category)
-    ####
-    #
-    # Get the cached list of channels/streams.
-    #
-    # Parameters:
-    #      category: Category name
-    #
-    # Return: The list of cached channels/streams in the given category
-    #
-    ####
-
-    logger.debug('Enter function')
-
-    logger.debug('Exit function')
-    return _cached_channels_list_
-
-
-
