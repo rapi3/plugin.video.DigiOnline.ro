@@ -30,7 +30,8 @@ import json
 import logging
 import logging.handlers
 import inputstreamhelper
-import resources.lib.common.vars
+import resources.lib.common.vars as vars
+import resources.lib.common.functions as functions
 
 # The cookielib module has been renamed to http.cookiejar in Python 3
 import cookielib
@@ -39,52 +40,6 @@ import cookielib
 # zed caching
 import time
 
-MyAddon = xbmcaddon.Addon(id='plugin.video.DigiOnline.ro')
-
-# Initialize the Addon data directory
-addon_data_dir = xbmc.translatePath(MyAddon.getAddonInfo('profile'))
-if not os.path.exists(addon_data_dir):
-    os.makedirs(addon_data_dir)
-
-# Log file name
-addon_logfile_name = os.path.join(addon_data_dir, 'plugin.video.DigiOnline.log')
-
-# Read the stored configuration
-_config_DebugEnabled_ = MyAddon.getSetting('DebugEnabled')
-_config_ShowTitleInChannelList_ = MyAddon.getSetting('ShowTitleInChannelList')
-
-
-# Configure logging
-if _config_DebugEnabled_ == 'true':
-  logging.basicConfig(level=logging.DEBUG)
-else:
-  logging.basicConfig(level=logging.INFO)
-
-logger = logging.getLogger('plugin.video.DigiOnline.log')
-logger.propagate = False
-
-# Create a rotating file handler
-# TODO: Extend the settings.xml to allow the user to choose the values for maxBytes and backupCount
-# TODO: Set the values for maxBytes and backupCount to values defined in the addon settings
-handler = logging.handlers.RotatingFileHandler(addon_logfile_name, mode='a', maxBytes=104857600, backupCount=2, encoding=None, delay=False)
-if _config_DebugEnabled_ == 'true':
-  handler.setLevel(logging.DEBUG)
-else:
-  handler.setLevel(logging.INFO)
-
-# Create a logging format to be used
-formatter = logging.Formatter('%(asctime)s %(funcName)s %(levelname)s: %(message)s', datefmt='%Y%m%d_%H%M%S')
-handler.setFormatter(formatter)
-
-# add the file handler to the logger
-logger.addHandler(handler)
-
-logger.debug('[ Addon settings ] _config_DebugEnabled_ = ' + str(_config_DebugEnabled_))
-logger.debug('[ Addon settings ] _config_ShowTitleInChannelList_ = ' + str(_config_ShowTitleInChannelList_))
-
-# UserAgent exposed by this addon
-#userAgent = 'Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0'
-userAgent = resources.lib.common.vars.__userAgent__
 
 # Kodi uses the following sys.argv arguments:
 # [0] - The base URL for this add-on, e.g. 'plugin://plugin.video.demo1/'.
@@ -97,29 +52,65 @@ _url = sys.argv[0]
 # Get the plugin handle as an integer number.
 _handle = int(sys.argv[1])
 
-# File containing the session cookies
-addon_cookiesfile_name = os.path.join(addon_data_dir, 'cookies.txt')
-logger.debug('[ Addon cookiefile ] addon_cookiesfile_name = ' + str(addon_cookiesfile_name))
+
+#MyAddon = xbmcaddon.Addon(id='plugin.video.DigiOnline.ro')
+MyAddon = xbmcaddon.Addon(id=vars.__AddonID__)
+
+# Initialize the Addon data directory
+addon_data_dir = xbmc.translatePath(MyAddon.getAddonInfo('profile'))
+if not os.path.exists(addon_data_dir):
+    os.makedirs(addon_data_dir)
+
+
+# Read the user preferences stored in the addon configuration
+vars.__config_AccountUser__ = MyAddon.getSetting('AccountUser')
+vars.__config_AccountPassword__ = MyAddon.getSetting('AccountPassword')
+vars.__config_DebugEnabled__ = MyAddon.getSetting('DebugEnabled')
+vars.__config_ShowTitleInChannelList__ = MyAddon.getSetting('ShowTitleInChannelList')
+
+
+# Log file name
+addon_logfile_name = os.path.join(addon_data_dir, vars.__AddonLogFilename__)
+
+# Configure logging
+if vars.__config_DebugEnabled__ == 'true':
+  logging.basicConfig(level=logging.DEBUG)
+else:
+  logging.basicConfig(level=logging.INFO)
+
+#logger = logging.getLogger('plugin.video.DigiOnline.log')
+logger = logging.getLogger(vars.__AddonID__)
+logger.propagate = False
+
+# Create a rotating file handler
+# TODO: Extend the settings.xml to allow the user to choose the values for maxBytes and backupCount
+# TODO: Set the values for maxBytes and backupCount to values defined in the addon settings
+handler = logging.handlers.RotatingFileHandler(addon_logfile_name, mode='a', maxBytes=104857600, backupCount=2, encoding=None, delay=False)
+if vars.__config_DebugEnabled__ == 'true':
+  handler.setLevel(logging.DEBUG)
+else:
+  handler.setLevel(logging.INFO)
+
+# Create a logging format to be used
+formatter = logging.Formatter('%(asctime)s %(funcName)s %(levelname)s: %(message)s', datefmt='%Y%m%d_%H%M%S')
+handler.setFormatter(formatter)
+
+# add the file handler to the logger
+logger.addHandler(handler)
+
+logger.debug('[ Addon settings ] __config_DebugEnabled__ = ' + str(vars.__config_DebugEnabled__))
+logger.debug('[ Addon settings ] __config_ShowTitleInChannelList__ = ' + str(vars.__config_ShowTitleInChannelList__))
+
+
+# Initialize the __AddonCookieJar__ variable
+functions.init_AddonCookieJar(vars.__AddonID__, addon_data_dir)
 
 # Start a new requests session and initialize the cookiejar
-__session__ = requests.Session()
-
-### WARNING: The cookielib module has been renamed to http.cookiejar in Python 3
-cookiejar = cookielib.MozillaCookieJar(addon_cookiesfile_name)
-#cookiejar = http.cookiejar.MozillaCookieJar(addon_cookiesfile_name)
-
-# If it doesn't exist already, create a new file where the cookies should be saved
-if not os.path.exists(addon_cookiesfile_name):
-  cookiejar.save()
-  logger.info('[ Addon cookiefile ] Created cookiejar file: ' + str(addon_cookiesfile_name))
-  logger.debug('[ Addon cookiefile ] Created cookiejar file: ' + str(addon_cookiesfile_name))
+vars.__AddonSession__ = requests.Session()
 
 # Put all session cookeis in the cookiejar
-__session__.cookies = cookiejar
+vars.__AddonSession__.cookies = vars.__AddonCookieJar__
 
-# Load any cookies saved from the last run
-cookiejar.load()
-logger.debug('[ Addon cookiejar ] Loaded cookiejar from file: ' + str(addon_cookiesfile_name))
 
 
 def check_defaults_DigiOnline_account():
@@ -140,118 +131,6 @@ def check_defaults_DigiOnline_account():
         _config_AccountPassword = MyAddon.getSetting('AccountPassword')
 
     logger.debug('Exit function')
-
-def do_login():
-    global __session__
-    global cookiejar
-
-    logger.debug('Enter function')
-
-    # Authentication to DigiOnline is done in two stages:
-    # 1 - Send a GET request to https://www.digionline.ro/auth/login ('DOSESSV3PRI' session cookie will be set)
-    # 2 - Send a PUT request to https://www.digionline.ro/auth/login with the credentials in the form-encoded data ('deviceId' cookie will be set)
-
-    logger.debug('============== Stage 1: Start ==============')
-    # Setup headers for the first request
-    MyHeaders = {
-        'Host': 'www.digionline.ro',
-        'User-Agent': userAgent,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US',
-        'Accept-Encoding': 'identity',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0'
-    }
-
-    logger.debug('Cookies: ' + str(list(cookiejar)))
-    logger.debug('Headers: ' + str(MyHeaders))
-    logger.debug('URL: https://www.digionline.ro/auth/login')
-    logger.debug('Method: GET')
-
-    # Send the GET request
-    _request_ = __session__.get('https://www.digionline.ro/auth/login', headers=MyHeaders)
-
-    logger.debug('Received status code: ' + str(_request_.status_code))
-    logger.debug('Received cookies: ' + str(list(cookiejar)))
-    logger.debug('Received headers: ' + str(_request_.headers))
-    logger.debug('Received data: ' + str(_request_.content))
-    logger.debug('============== Stage 1: End ==============')
-
-    # Save cookies for later use.
-    cookiejar.save(ignore_discard=True)
-
-    logger.debug('============== Stage 2: Start ==============')
-
-    # Setup headers for second request
-    MyHeaders = {
-        'Host': 'www.digionline.ro',
-        'Origin': 'https://www.digionline.ro',
-        'Referer': 'https://www.digionline.ro/auth/login',
-        'User-Agent': userAgent,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US',
-        'Accept-Encoding': 'identity',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0'
-    }
-
-    # Setup form data to be sent
-    _config_AccountUser = MyAddon.getSetting('AccountUser')
-    _config_AccountPassword = MyAddon.getSetting('AccountPassword')
-    MyFormData = {
-      'form-login-email': _config_AccountUser,
-      'form-login-password': _config_AccountPassword
-        }
-
-    logger.debug('Cookies: ' + str(list(cookiejar)))
-    logger.debug('Headers: ' + str(MyHeaders))
-    logger.debug('MyFormData: ' + str(MyFormData))
-    logger.debug('URL: https://www.digionline.ro/auth/login')
-    logger.debug('Method: POST')
-
-    # Send the POST request
-    _request_ = __session__.post('https://www.digionline.ro/auth/login', headers=MyHeaders, data=MyFormData)
-
-    logger.debug('Received status code: ' + str(_request_.status_code))
-    logger.debug('Received cookies: ' + str(list(cookiejar)))
-    logger.debug('Received headers: ' + str(_request_.headers))
-    logger.debug('Received data: ' + str(_request_.content))
-    logger.debug('============== Stage 2: End ==============')
-
-    # Authentication error.
-    if re.search('<div class="form-error(.+?)>', _request_.content, re.IGNORECASE):
-      logger.debug('\'form-error\' found.')
-
-      _ERR_SECTION_ = re.findall('<div class="form-error(.+?)>\n(.+?)<\/div>', _request_.content, re.IGNORECASE|re.DOTALL)[0][1].strip()
-      _auth_error_message_ = re.sub('&period;', '.', _ERR_SECTION_, flags=re.IGNORECASE)
-      _auth_error_message_ = re.sub('&abreve;', 'a', _auth_error_message_, flags=re.IGNORECASE)
-
-      logger.info('[Authentication error] => Error message: '+ _auth_error_message_)
-
-      logger.debug('_ERR_SECTION_ = ' + str(_ERR_SECTION_))
-      logger.debug('_auth_error_message_ = ' + _auth_error_message_)
-      logger.debug('[Authentication error] => Error message: '+ _auth_error_message_)
-
-      xbmcgui.Dialog().ok('[Authentication error message]', _auth_error_message_)
-
-      logger.debug('Exit function')
-
-      xbmc.executebuiltin("XBMC.Container.Update(path,replace)")
-
-
-    else:
-      logger.debug('\'form-error\' not found.')
-
-      logger.info('Authentication successfull')
-      logger.debug('Authentication successfull')
-
-      # Save cookies for later use.
-      cookiejar.save(ignore_discard=True)
-
-      logger.debug('Exit function')
 
 
 def get_url(**kwargs):
@@ -289,7 +168,7 @@ def get_categories():
     MyHeaders = {
       'Host': 'www.digionline.ro',
       'Referer': 'https://www.digionline.ro/',
-      'User-Agent': userAgent,
+      'User-Agent': vars.__userAgent__,
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US',
       'Accept-Encoding': 'identity',
@@ -368,7 +247,7 @@ def get_channels(category):
     MyHeaders = {
       'Host': 'www.digionline.ro',
       'Referer': 'https://www.digionline.ro/',
-      'User-Agent': userAgent,
+      'User-Agent': vars.__userAgent__,
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       'Accept-Language': 'en-US',
       'Accept-Encoding': 'identity',
@@ -413,7 +292,7 @@ def get_channels(category):
       MyHeaders = {
         'Host': 'www.digionline.ro',
         'Referer': 'https://www.digionline.ro/' + category,
-        'User-Agent': userAgent,
+        'User-Agent': vars.__userAgent__,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US',
         'Accept-Encoding': 'identity',
@@ -456,7 +335,7 @@ def get_channels(category):
       MyHeaders = {
         'Host': 'www.digionline.ro',
         'Referer': 'https://www.digionline.ro/' + _channel_endpoint_,
-        'User-Agent': userAgent,
+        'User-Agent': vars.__userAgent__,
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US',
         'Accept-Encoding': 'identity',
@@ -533,7 +412,8 @@ def list_categories():
         categories = cache['categories']
     else:
         # Login to DigiOnline for this session
-        do_login()
+        #do_login()
+        functions.do_login(vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__)
 
         categories = get_categories()
         logger.info('Received categories = ' + str(categories))
@@ -621,7 +501,7 @@ def list_channels(category):
         channels = cache['channels']
     else:
         # Login to DigiOnline for this session
-        do_login()
+        functions.do_login(vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__)
 
         channels = get_channels(category)
         logger.info('Received channels = ' + str(channels))
@@ -747,7 +627,7 @@ def play_video(endpoint, metadata, epgdata):
         'Origin':  'https://www.digionline.ro',
         'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'User-Agent': userAgent,
+        'User-Agent': vars.__userAgent__,
         'Accept': '*/*',
         'Accept-Language': 'en-US',
         'Accept-Encoding': 'identity',
@@ -789,7 +669,7 @@ def play_video(endpoint, metadata, epgdata):
       # Set the headers to be used with imputstream.adaptive
       _headers_ = ''
       _headers_ = _headers_ + 'Host=' + _headers_host_
-      _headers_ = _headers_ + '&User-Agent=' + userAgent
+      _headers_ = _headers_ + '&User-Agent=' + vars.__userAgent__
       _headers_ = _headers_ + '&Referer=' + 'https://www.digionline.ro' + endpoint
       _headers_ = _headers_ + '&Origin=https://www.digionline.ro'
       _headers_ = _headers_ + '&Connection=keep-alive'
@@ -829,7 +709,7 @@ def play_video(endpoint, metadata, epgdata):
         'Origin':  'https://www.digionline.ro',
         'X-Requested-With': 'XMLHttpRequest',
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'User-Agent': userAgent,
+        'User-Agent': vars.__userAgent__,
         'Accept': '*/*',
         'Accept-Language': 'en-US',
         'Accept-Encoding': 'identity',
@@ -874,7 +754,7 @@ def play_video(endpoint, metadata, epgdata):
         # Set the headers to be used with imputstream.adaptive
         _headers_ = ''
         _headers_ = _headers_ + 'Host=' + _headers_host_
-        _headers_ = _headers_ + '&User-Agent=' + userAgent
+        _headers_ = _headers_ + '&User-Agent=' + vars.__userAgent__
         _headers_ = _headers_ + '&Referer=' + 'https://www.digionline.ro' + endpoint
         _headers_ = _headers_ + '&Origin=https://www.digionline.ro'
         _headers_ = _headers_ + '&Connection=keep-alive'
@@ -890,7 +770,7 @@ def play_video(endpoint, metadata, epgdata):
         # Set the headers to be used when requesting license key
         _lic_headers_ = ''
         _lic_headers_ = _lic_headers_ + 'Host=' + _lic_headers_host_
-        _lic_headers_ = _lic_headers_ + '&User-Agent=' + userAgent
+        _lic_headers_ = _lic_headers_ + '&User-Agent=' + vars.__userAgent__
         _lic_headers_ = _lic_headers_ + '&Referer=' + 'https://www.digionline.ro' + endpoint
         _lic_headers_ = _lic_headers_ + '&Origin=https://www.digionline.ro'
         _lic_headers_ = _lic_headers_ + '&Connection=keep-alive'
@@ -958,7 +838,9 @@ def router(paramstring):
             list_channels(params['category'])
         elif params['action'] == 'play':
             # Login to DigiOnline for this session
-            do_login()
+            #do_login()
+            functions.do_login(vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__)
+
             # Play a video from the provided URL.
             play_video(params['channel_endpoint'], params['channel_metadata'], params['channel_epgdata'])
         else:
