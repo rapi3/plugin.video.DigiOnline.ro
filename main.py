@@ -24,9 +24,9 @@ import xbmcgui
 import xbmcplugin
 import os
 import re
+import json
 import xbmcaddon
 import requests
-import json
 import logging
 import logging.handlers
 import inputstreamhelper
@@ -57,9 +57,9 @@ _handle = int(sys.argv[1])
 MyAddon = xbmcaddon.Addon(id=vars.__AddonID__)
 
 # Initialize the Addon data directory
-addon_data_dir = xbmc.translatePath(MyAddon.getAddonInfo('profile'))
-if not os.path.exists(addon_data_dir):
-    os.makedirs(addon_data_dir)
+MyAddon_DataDir = xbmc.translatePath(MyAddon.getAddonInfo('profile'))
+if not os.path.exists(MyAddon_DataDir):
+    os.makedirs(MyAddon_DataDir)
 
 
 # Read the user preferences stored in the addon configuration
@@ -70,7 +70,7 @@ vars.__config_ShowTitleInChannelList__ = MyAddon.getSetting('ShowTitleInChannelL
 
 
 # Log file name
-addon_logfile_name = os.path.join(addon_data_dir, vars.__AddonLogFilename__)
+addon_logfile_name = os.path.join(MyAddon_DataDir, vars.__AddonLogFilename__)
 
 # Configure logging
 if vars.__config_DebugEnabled__ == 'true':
@@ -103,7 +103,7 @@ logger.debug('[ Addon settings ] __config_ShowTitleInChannelList__ = ' + str(var
 
 
 # Initialize the __AddonCookieJar__ variable
-functions.init_AddonCookieJar(vars.__AddonID__, addon_data_dir)
+functions.init_AddonCookieJar(vars.__AddonID__, MyAddon_DataDir)
 
 # Start a new requests session and initialize the cookiejar
 vars.__AddonSession__ = requests.Session()
@@ -116,19 +116,19 @@ vars.__AddonSession__.cookies = vars.__AddonCookieJar__
 def check_defaults_DigiOnline_account():
     logger.debug('Enter function')
 
-    _config_AccountUser = MyAddon.getSetting('AccountUser')
-    while _config_AccountUser == '__DEFAULT_USER__':
+    vars.__config_AccountUser__ = MyAddon.getSetting('AccountUser')
+    while vars.__config_AccountUser__ == '__DEFAULT_USER__':
         logger.debug('Default settings found.', 'Please configure the Authentication User to be used with this addon.')
         xbmcgui.Dialog().ok('Default settings found.', 'Please configure the Authentication User to be used with this addon.')
         MyAddon.openSettings()
-        _config_AccountUser = MyAddon.getSetting('AccountUser')
+        vars.__config_AccountUser__ = MyAddon.getSetting('AccountUser')
 
-    _config_AccountPassword = MyAddon.getSetting('AccountPassword')
-    while _config_AccountPassword == '__DEFAULT_PASSWORD__':
+    vars.__config_AccountPassword__ = MyAddon.getSetting('AccountPassword')
+    while vars.__config_AccountPassword__ == '__DEFAULT_PASSWORD__':
         logger.debug('Default settings found', 'Please configure the Authenticatin Password to be used with this addon.')
         xbmcgui.Dialog().ok('Default settings found', 'Please configure the Authenticatin Password to be used with this addon.')
         MyAddon.openSettings()
-        _config_AccountPassword = MyAddon.getSetting('AccountPassword')
+        vars.__config_AccountPassword__ = MyAddon.getSetting('AccountPassword')
 
     logger.debug('Exit function')
 
@@ -151,228 +151,6 @@ def get_url(**kwargs):
     return _call_url_
 
 
-def get_categories():
-    ####
-    #
-    # Get the list of video categories.
-    #
-    # Return: The list of video categories
-    #
-    ####
-
-    global __session__
-    global cookiejar
-
-    logger.debug('Enter function')
-
-    MyHeaders = {
-      'Host': 'www.digionline.ro',
-      'Referer': 'https://www.digionline.ro/',
-      'User-Agent': vars.__userAgent__,
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US',
-      'Accept-Encoding': 'identity',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Cache-Control': 'max-age=0'
-    }
-
-    logger.debug('Cookies: ' + str(list(cookiejar)))
-    logger.debug('Headers: ' + str(MyHeaders))
-    logger.debug('URL: https://www.digionline.ro')
-    logger.debug('Method: GET')
-
-    # Send the GET request
-    _request_ = __session__.get('https://www.digionline.ro', headers=MyHeaders)
-
-    logger.debug('Received status code: ' + str(_request_.status_code))
-    logger.debug('Received cookies: ' + str(list(cookiejar)))
-    logger.debug('Received headers: ' + str(_request_.headers))
-    logger.debug('Received data: ' + str(_request_.content))
-
-    # Get the raw list of categories
-    _raw_categories_ = re.findall('<a href=(.+?)class="nav-menu-item-link ">', _request_.content, re.IGNORECASE)
-    logger.debug('Found: _raw_categories_ = ' + str(_raw_categories_))
-
-    # Cleanup special characters
-    _raw_categories_ = str(_raw_categories_).replace('\\xc8\\x98', 'S')
-    _raw_categories_ = str(_raw_categories_).replace('\\xc4\\x83', 'a')
-    logger.debug('Cleaned-up _raw_categories_ = ' + str(_raw_categories_))
-
-    # Build the list of categories names and their titles
-    _raw_categories_ = re.findall('"/(.+?)" title="(.+?)"',str(_raw_categories_), re.IGNORECASE)
-    logger.debug('Found: _raw_categories_ = ' + str(_raw_categories_))
-
-    # Initialize the list of channels
-    _categories_list_ = []
-
-    for _cat_ in _raw_categories_:
-      logger.info('Found category: ' + _cat_[1])
-      logger.debug('Found category: ' + _cat_[1])
-      _cat_record_ = {}
-      _cat_record_["name"] = _cat_[0]
-      _cat_record_["title"] = _cat_[1]
-
-      logger.debug('Created: _cat_record_ = ' + str(_cat_record_))
-      _categories_list_.append(_cat_record_)
-
-    logger.debug('_categories_list_ = ' + str(_categories_list_))
-    logger.debug('Exit function')
-
-    return _categories_list_
-
-
-def get_channels(category):
-    ####
-    #
-    # Get the list of channels/streams.
-    #
-    # Parameters:
-    #      category: Category name
-    #
-    # Return: The list of channels/streams in the given category
-    #
-    ####
-
-    global __session__
-    global cookiejar
-
-    logger.debug('Enter function')
-    logger.debug('Called with parameters:  category = ' + category)
-
-    logger.info('Looking for channels in category: ' + category)
-    logger.debug('Looking for channels in category: ' + category)
-
-    # Get the list of channels in this category
-    MyHeaders = {
-      'Host': 'www.digionline.ro',
-      'Referer': 'https://www.digionline.ro/',
-      'User-Agent': vars.__userAgent__,
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US',
-      'Accept-Encoding': 'identity',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Cache-Control': 'max-age=0'
-    }
-
-    logger.debug('Cookies: ' + str(list(cookiejar)))
-    logger.debug('Headers: ' + str(MyHeaders))
-    logger.debug('URL: https://www.digionline.ro/' + category)
-    logger.debug('Method: GET')
-
-    # Send the GET request
-    _request_ = __session__.get('https://www.digionline.ro/' + category, headers=MyHeaders)
-
-    logger.debug('Received status code: ' + str(_request_.status_code))
-    logger.debug('Received cookies: ' + str(list(cookiejar)))
-    logger.debug('Received headers: ' + str(_request_.headers))
-    logger.debug('Received data: ' + str(_request_.content))
-
-    _raw_channel_boxes_ = re.findall('<div class="box-container">(.+?)<figcaption>', _request_.content, re.IGNORECASE|re.DOTALL)
-    logger.debug('Found _raw_channel_boxes = ' + str(_raw_channel_boxes_))
-
-    # Initialize the list of channels
-    _channels_ = []
-
-    for _raw_channel_box_ in _raw_channel_boxes_:
-      logger.debug('_raw_channel_box_ = ' + str(_raw_channel_box_))
-
-      _channel_record_ = {}
-
-      _channel_endpoint_ = re.findall('<a href="(.+?)" class="box-link"></a>', _raw_channel_box_, re.IGNORECASE)
-      _channel_endpoint_ = _channel_endpoint_[0]
-      logger.debug('Found: _channel_endpoint_ = ' + _channel_endpoint_)
-
-      _channel_logo_ = re.findall('<img src="(.+?)" alt="logo">', _raw_channel_box_, re.IGNORECASE)
-      _channel_logo_ = _channel_logo_[0]
-      logger.debug('Found: _channel_logo_ = ' + _channel_logo_)
-
-      # Get additional details of the current channel
-      MyHeaders = {
-        'Host': 'www.digionline.ro',
-        'Referer': 'https://www.digionline.ro/' + category,
-        'User-Agent': vars.__userAgent__,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US',
-        'Accept-Encoding': 'identity',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0'
-      }
-
-      logger.debug('Cookies: ' + str(list(cookiejar)))
-      logger.debug('Headers: ' + str(MyHeaders))
-      logger.debug('URL: https://www.digionline.ro' + _channel_endpoint_)
-      logger.debug('Method: GET')
-
-      # Send the GET request
-      _request_ = __session__.get('https://www.digionline.ro' + _channel_endpoint_, headers=MyHeaders)
-
-      logger.debug('Received status code: ' + str(_request_.status_code))
-      logger.debug('Received cookies: ' + str(list(cookiejar)))
-      logger.debug('Received headers: ' + str(_request_.headers))
-      logger.debug('Received data: ' + str(_request_.content))
-
-      _raw_channel_details_box_ = re.findall('<div class="entry-video video-player(.+?)</div>', _request_.content, re.IGNORECASE|re.DOTALL)
-      logger.debug('_raw_channel_details_box_ = ' + str(_raw_channel_details_box_))
-
-      _channel_details_box_ = _raw_channel_details_box_[0]
-      _channel_details_box_ = _channel_details_box_.replace('\n', '')
-      _channel_details_box_ = _channel_details_box_.strip()
-      logger.debug('_channel_details_box_ = ' + _channel_details_box_)
-
-      _channel_metadata_ = re.findall('<script type="text/template">(.+?)</script>', _channel_details_box_, re.IGNORECASE)
-      _channel_metadata_ = _channel_metadata_[0].strip()
-      logger.debug('Found: _channel_metadata_ = ' + str(_channel_metadata_))
-
-      _ch_meta_ = json.loads(_channel_metadata_)
-      logger.info('Found channel: ' + _ch_meta_['new-info']['meta']['channelName'])
-      logger.debug('Found: _channel_name_ = ' + _ch_meta_['new-info']['meta']['channelName'])
-      logger.debug('Found: _channel_streamId_ = ' + str(_ch_meta_['new-info']['meta']['streamId']))
-
-      # Get the EPG details for the current channel
-      MyHeaders = {
-        'Host': 'www.digionline.ro',
-        'Referer': 'https://www.digionline.ro/' + _channel_endpoint_,
-        'User-Agent': vars.__userAgent__,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US',
-        'Accept-Encoding': 'identity',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0'
-      }
-
-      logger.debug('Cookies: ' + str(list(cookiejar)))
-      logger.debug('Headers: ' + str(MyHeaders))
-      logger.debug('URL: https://www.digionline.ro/epg-xhr?channelId=' + str(_ch_meta_['new-info']['meta']['streamId']))
-      logger.debug('Method: GET')
-
-      # Send the GET request
-      _request_ = __session__.get('https://www.digionline.ro/epg-xhr?channelId=' + str(_ch_meta_['new-info']['meta']['streamId']), headers=MyHeaders)
-
-      logger.debug('Received status code: ' + str(_request_.status_code))
-      logger.debug('Received cookies: ' + str(list(cookiejar)))
-      logger.debug('Received headers: ' + str(_request_.headers))
-      logger.debug('Received data: ' + str(_request_.content))
-
-      _channel_epgdata_ = _request_.content
-      logger.debug('_channel_epgdata_ = ' + _channel_epgdata_)
-
-      _channel_record_["endpoint"] = _channel_endpoint_
-      _channel_record_["name"] = _ch_meta_['new-info']['meta']['channelName']
-      _channel_record_["logo"] = _channel_logo_
-      _channel_record_["metadata"] = _channel_metadata_
-      _channel_record_["epgdata"] = _channel_epgdata_
-
-      logger.debug('Created: _channel_record_ = ' + str(_channel_record_))
-      _channels_.append(_channel_record_)
-
-    logger.debug('_channels_ = ' + str(_channels_))
-    logger.debug('Exit function')
-    return _channels_
-
 
 def list_categories():
     ####
@@ -380,7 +158,6 @@ def list_categories():
     # Create the list of video categories in the Kodi interface.
     #
     ####
-
     logger.debug('Enter function')
 
     # Set plugin category.
@@ -390,42 +167,18 @@ def list_categories():
     xbmcplugin.setContent(_handle, 'videos')
 
     # Get video categories
-    # zed caching
-    addon_categoriesfile_name = os.path.join(addon_data_dir, 'categories.json')
+    categories = functions.get_cached_categories(vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__, MyAddon_DataDir)
+    logger.debug('Received categories = ' + str(categories))
 
-    if os.path.exists(addon_categoriesfile_name):
-        with open(addon_categoriesfile_name) as tmp:
-            try:
-                cache = json.load(tmp)
-            except:
-                cache = {}
-        logger.info('Read categories from cache')
+    if categories['status']['exit_code'] != 0:
+      logger.debug('categories[\'status\'][\'exit_code\'] = ' + str(categories['status']['exit_code']))
+      xbmcgui.Dialog().ok('[Authentication error]', categories['status']['error_message'])
 
-    try:
-        cache['time']
-    except:
-        cache = {}
-        cache['time'] = 0
+      logger.debug('Exit function')
+      xbmc.executebuiltin("XBMC.Container.Update(path,replace)")
 
-    # zed cache categories for 1 day
-    if (cache['time'] > time.time() - (24 * 60 * 60)):
-        categories = cache['categories']
     else:
-        # Login to DigiOnline for this session
-        #do_login()
-        functions.do_login(vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__)
-
-        categories = get_categories()
-        logger.info('Received categories = ' + str(categories))
-
-        cache['time'] = time.time()
-        cache['categories'] = categories
-        with open(addon_categoriesfile_name, 'w') as tmp:
-            json.dump(cache, tmp)
-
-        logger.info('Save categories in cache')
-
-    for category in categories:
+      for category in categories['cached_categories']:
         logger.debug('category name = ' + category['name'] + '| category title = ' + category['title'])
 
         # Create a list item with a text label and a thumbnail image.
@@ -449,14 +202,14 @@ def list_categories():
         # Add our item to the Kodi virtual folder listing.
         xbmcplugin.addDirectoryItem(_handle, url, list_item, is_folder)
 
-    # Add a sort method for the virtual folder items (alphabetically, ignore articles)
-    # See: https://romanvm.github.io/Kodistubs/_autosummary/xbmcplugin.html
-    xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_LABEL)
+      # Add a sort method for the virtual folder items (alphabetically, ignore articles)
+      # See: https://romanvm.github.io/Kodistubs/_autosummary/xbmcplugin.html
+      xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_LABEL)
 
-    # Finish creating a virtual folder.
-    xbmcplugin.endOfDirectory(_handle)
+      # Finish creating a virtual folder.
+      xbmcplugin.endOfDirectory(_handle)
 
-    logger.debug('Exit function')
+      logger.debug('Exit function')
 
 
 def list_channels(category):
@@ -479,41 +232,18 @@ def list_channels(category):
     xbmcplugin.setContent(_handle, 'videos')
 
     # Get the list of videos in the category.
-    # zed caching
-    addon_channelsfile_name = os.path.join(addon_data_dir, 'channels-' + category + '.json')
+    channels = functions.get_cached_channels(category, vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__, MyAddon_DataDir)
+    logger.debug('Received channels = ' + str(channels))
 
-    if os.path.exists(addon_channelsfile_name):
-        with open(addon_channelsfile_name) as tmp:
-            try:
-                cache = json.load(tmp)
-            except:
-                cache = {}
-        logger.info('Read channels from cache')
+    if channels['status']['exit_code'] != 0:
+      logger.debug('channels[\'status\'][\'exit_code\'] = ' + str(channels['status']['exit_code']))
+      xbmcgui.Dialog().ok('[Authentication error]', channels['status']['error_message'])
 
-    try:
-        cache['time']
-    except:
-        cache = {}
-        cache['time'] = 0
+      logger.debug('Exit function')
+      xbmc.executebuiltin("XBMC.Container.Update(path,replace)")
 
-    # zed cache channels for 30 min to be partial accurated the epg
-    if (cache['time'] > time.time() - (30 * 60)):
-        channels = cache['channels']
     else:
-        # Login to DigiOnline for this session
-        functions.do_login(vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__)
-
-        channels = get_channels(category)
-        logger.info('Received channels = ' + str(channels))
-
-        cache['time'] = time.time()
-        cache['channels'] = channels
-        with open(addon_channelsfile_name, 'w') as tmp:
-            json.dump(cache, tmp)
-
-        logger.info('Save channels in cache')
-
-    for channel in channels:
+      for channel in channels['cached_channels']:
         logger.debug('Channel data => ' +str(channel))
         logger.debug('Channel name: ' + channel['name'])
         logger.debug('Channel logo: ' + channel['logo'])
@@ -535,7 +265,7 @@ def list_channels(category):
           # Set additional info for the list item.
           # For available properties see https://codedocs.xyz/xbmc/xbmc/group__python__xbmcgui__listitem.html#ga0b71166869bda87ad744942888fb5f14
           # 'mediatype' is needed for skin to display info for this ListItem correctly.
-          if _config_ShowTitleInChannelList_ == 'false':
+          if vars.__config_ShowTitleInChannelList__ == 'false':
             list_item.setInfo('video', {'title': channel['name'],
                                         'genre': category,
                                         'plotoutline': ch_epg_data['title'],
@@ -575,11 +305,11 @@ def list_channels(category):
         # Add our item to the Kodi virtual folder listing.
         xbmcplugin.addDirectoryItem(_handle, url, list_item, is_folder)
 
-    # Add a sort method for the virtual folder items (alphabetically, ignore articles)
-    xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
+      # Add a sort method for the virtual folder items (alphabetically, ignore articles)
+      xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
 
-    # Finish creating a virtual folder.
-    xbmcplugin.endOfDirectory(_handle)
+      # Finish creating a virtual folder.
+      xbmcplugin.endOfDirectory(_handle)
 
     logger.debug('Exit function')
 
@@ -593,163 +323,84 @@ def play_video(endpoint, metadata, epgdata):
     #      path: Fully-qualified video URL
     #
     ####
-
-    global __session__
-    global cookiejar
-
     logger.debug('Enter function')
-    logger.debug('Called with parameters: endpoint = ' + endpoint)
-    logger.debug('Called with parameters: metadata = ' + str(metadata))
-    logger.debug('Called with parameters: epgdata = ' + str(epgdata))
 
-    # Set a flag so we know whether to enter in the last "if" clause
-    known_video_type = 0
+    # Login to DigiOnline for this session
+    login = functions.do_login(vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__)
 
-    _channel_metadata_ = json.loads(metadata)
-    _channel_epgdata_ = json.loads(epgdata)
+    if login['exit_code'] != 0:
+      xbmcgui.Dialog().ok('[Authentication error]', login['error_message'])
+      logger.debug('Exit function')
+      xbmc.executebuiltin("XBMC.Container.Update(path,replace)")
 
-    logger.info('Play channel: ' + _channel_metadata_['new-info']['meta']['channelName'])
-    logger.debug('Play channel: ' + _channel_metadata_['new-info']['meta']['channelName'])
+    else:
 
-    logger.debug('_channel_metadata_[\'shortcode\'] = ' + _channel_metadata_['shortcode'])
+      logger.debug('Called with parameters: endpoint = ' + endpoint)
+      logger.debug('Called with parameters: metadata = ' + str(metadata))
+      logger.debug('Called with parameters: epgdata = ' + str(epgdata))
 
+      # Set a flag so we know whether to enter in the last "if" clause
+      known_video_type = 0
 
-    if _channel_metadata_['shortcode'] == 'livestream':
-      logger.debug('Playing a \'livestream\' video.')
+      _channel_metadata_ = json.loads(metadata)
+      _channel_epgdata_ = json.loads(epgdata)
 
-      # Set the flag so we won't enter in the last "if" clause
-      known_video_type = 1
+      logger.info('Play channel: ' + _channel_metadata_['new-info']['meta']['channelName'])
+      logger.debug('Play channel: ' + _channel_metadata_['new-info']['meta']['channelName'])
 
-      # Get the stream data (contains the URL for the stream to be played)
-      MyHeaders = {
-        'Host': 'www.digionline.ro',
-        'Referer': 'https://www.digionline.ro' + endpoint,
-        'Origin':  'https://www.digionline.ro',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'User-Agent': vars.__userAgent__,
-        'Accept': '*/*',
-        'Accept-Language': 'en-US',
-        'Accept-Encoding': 'identity',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      }
+      logger.debug('_channel_metadata_[\'shortcode\'] = ' + _channel_metadata_['shortcode'])
 
-      MyPostData = {'id_stream': _channel_metadata_['new-info']['meta']['streamId'], 'quality': 'hq'}
+      if _channel_metadata_['shortcode'] == 'livestream':
+        logger.debug('Playing a \'livestream\' video.')
 
-      logger.debug('Cookies: ' + str(list(cookiejar)))
-      logger.debug('Headers: ' + str(MyHeaders))
-      logger.debug('MyPostData: ' + str(MyPostData))
-      logger.debug('URL: https://www.digionline.ro' + _channel_metadata_['new-info']['meta']['streamUrl'])
-      logger.debug('Method: POST')
+        # Set the flag so we won't enter in the last "if" clause
+        known_video_type = 1
 
-      # Send the POST request
-      _request_ = __session__.post('https://www.digionline.ro' + _channel_metadata_['new-info']['meta']['streamUrl'], data=MyPostData, headers=MyHeaders)
+        # Get the stream data (contains the URL for the stream to be played)
+        MyHeaders = {
+          'Host': 'www.digionline.ro',
+          'Referer': 'https://www.digionline.ro' + endpoint,
+          'Origin':  'https://www.digionline.ro',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': vars.__userAgent__,
+          'Accept': '*/*',
+          'Accept-Language': 'en-US',
+          'Accept-Encoding': 'identity',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1'
+        }
 
-      logger.debug('Received status code: ' + str(_request_.status_code))
-      logger.debug('Received cookies: ' + str(list(cookiejar)))
-      logger.debug('Received headers: ' + str(_request_.headers))
-      logger.debug('Received data: ' + _request_.content)
+        MyPostData = {'id_stream': _channel_metadata_['new-info']['meta']['streamId'], 'quality': 'hq'}
 
-      _stream_data_ = json.loads(_request_.content)
-      logger.debug('_stream_data_ = ' + str(_stream_data_))
+        logger.debug('Cookies: ' + str(list(vars.__AddonCookieJar__)))
+        logger.debug('Headers: ' + str(MyHeaders))
+        logger.debug('MyPostData: ' + str(MyPostData))
+        logger.debug('URL: https://www.digionline.ro' + _channel_metadata_['new-info']['meta']['streamUrl'])
+        logger.debug('Method: POST')
 
-      # Get the host needed to be set in the headers
-      _headers_host_ = re.findall('//(.+?)/', _stream_data_['stream_url'], re.IGNORECASE)[0]
-      logger.debug('Found: _headers_host_ = ' + _headers_host_)
+        # Send the POST request
+        _request_ = vars.__AddonSession__.post('https://www.digionline.ro' + _channel_metadata_['new-info']['meta']['streamUrl'], data=MyPostData, headers=MyHeaders)
 
-     # If needed, append the "https:" to the stream_url
-      if 'https://' not in _stream_data_['stream_url']:
-        _stream_url_ = 'https:' + _stream_data_['stream_url']
-        logger.debug('Created: _stream_url_ = ' + _stream_url_)
-      else:
-        _stream_url_ = _stream_data_['stream_url']
-        logger.debug('Found: _stream_url_ = ' + _stream_url_)
+        logger.debug('Received status code: ' + str(_request_.status_code))
+        logger.debug('Received cookies: ' + str(list(vars.__AddonCookieJar__)))
+        logger.debug('Received headers: ' + str(_request_.headers))
+        logger.debug('Received data: ' + _request_.content)
 
-      # Set the headers to be used with imputstream.adaptive
-      _headers_ = ''
-      _headers_ = _headers_ + 'Host=' + _headers_host_
-      _headers_ = _headers_ + '&User-Agent=' + vars.__userAgent__
-      _headers_ = _headers_ + '&Referer=' + 'https://www.digionline.ro' + endpoint
-      _headers_ = _headers_ + '&Origin=https://www.digionline.ro'
-      _headers_ = _headers_ + '&Connection=keep-alive'
-      _headers_ = _headers_ + '&Accept-Language=en-US'
-      _headers_ = _headers_ + '&Accept=*/*'
-      _headers_ = _headers_ + '&Accept-Encoding=identity'
-      logger.debug('Created: _headers_ = ' + _headers_)
+        _stream_data_ = json.loads(_request_.content)
+        logger.debug('_stream_data_ = ' + str(_stream_data_))
 
-      # Create a playable item with a path to play.
-      # See:  https://github.com/peak3d/inputstream.adaptive/issues/131#issuecomment-375059796
-      play_item = xbmcgui.ListItem(path=_stream_url_)
-      play_item.setProperty('inputstreamaddon', 'inputstream.adaptive')
-      play_item.setProperty('inputstream.adaptive.stream_headers', _headers_)
-      play_item.setProperty('inputstream.adaptive.manifest_type', 'hls')
-      play_item.setMimeType('application/vnd.apple.mpegurl')
-      play_item.setContentLookup(False)
-
-      # Pass the item to the Kodi player.
-      xbmcplugin.setResolvedUrl(_handle, True, listitem=play_item)
-
-
-    if _channel_metadata_['shortcode'] == 'nagra-livestream':
-      logger.debug('Playing a \'nagra-livestream\' video.')
-
-      # Set the flag so we won't enter in the last if clause
-      known_video_type = 1
-
-      for cookie in cookiejar:
-        if cookie.name == "deviceId":
-          _deviceId_ = cookie.value
-          logger.debug(' _deviceID_ = ' + _deviceId_ )
-
-      # Get the stream data (contains the URL for the stream to be played)
-      MyHeaders = {
-        'Host': 'www.digionline.ro',
-        'Referer': 'https://www.digionline.ro' + endpoint,
-        'Origin':  'https://www.digionline.ro',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'User-Agent': vars.__userAgent__,
-        'Accept': '*/*',
-        'Accept-Language': 'en-US',
-        'Accept-Encoding': 'identity',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      }
-
-      MyPostData = {'id_stream': _channel_metadata_['new-info']['meta']['streamId'], 'quality': 'hq', 'id_device': _deviceId_}
-
-      logger.debug('Cookies: ' + str(list(cookiejar)))
-      logger.debug('Headers: ' + str(MyHeaders))
-      logger.debug('MyPostData: ' + str(MyPostData))
-      logger.debug('URL: https://www.digionline.ro' + _channel_metadata_['new-info']['meta']['streamUrl'])
-      logger.debug('Method: POST')
-
-      # Send the POST request
-      _request_ = __session__.post('https://www.digionline.ro' + _channel_metadata_['new-info']['meta']['streamUrl'], data=MyPostData, headers=MyHeaders)
-
-      logger.debug('Received status code: ' + str(_request_.status_code))
-      logger.debug('Received cookies: ' + str(list(cookiejar)))
-      logger.debug('Received headers: ' + str(_request_.headers))
-      logger.debug('Received data: ' + _request_.content)
-
-      _stream_data_ = json.loads(_request_.content)
-      logger.debug('_stream_data_ = ' + str(_stream_data_))
-
-      if _stream_data_['error']['error_code'] == 0:
-        logger.debug('_stream_data_[\'error\'][\'error_code\'] = ' + str(_stream_data_['error']['error_code']))
-
-        # Get the host needed to be set in the headers for the manifest file
-        _headers_host_ = re.findall('//(.+?)/', _stream_data_['data']['content']['stream.manifest.url'], re.IGNORECASE)[0]
+        # Get the host needed to be set in the headers
+        _headers_host_ = re.findall('//(.+?)/', _stream_data_['stream_url'], re.IGNORECASE)[0]
         logger.debug('Found: _headers_host_ = ' + _headers_host_)
 
        # If needed, append the "https:" to the stream_url
-        if 'https://' not in _stream_data_['data']['content']['stream.manifest.url']:
-          _stream_manifest_url_ = 'https:' + _stream_data_['data']['content']['stream.manifest.url']
-          logger.debug('Created: _stream_manifest_url_ = ' + _stream_manifest_url_)
+        if 'https://' not in _stream_data_['stream_url']:
+          _stream_url_ = 'https:' + _stream_data_['stream_url']
+          logger.debug('Created: _stream_url_ = ' + _stream_url_)
         else:
-          _stream_manifest_url_ = _stream_data_['data']['content']['stream.manifest.url']
-          logger.debug('Found: _stream_manifest_url_ = ' + _stream_manifest_url_)
+          _stream_url_ = _stream_data_['stream_url']
+          logger.debug('Found: _stream_url_ = ' + _stream_url_)
 
         # Set the headers to be used with imputstream.adaptive
         _headers_ = ''
@@ -763,56 +414,141 @@ def play_video(endpoint, metadata, epgdata):
         _headers_ = _headers_ + '&Accept-Encoding=identity'
         logger.debug('Created: _headers_ = ' + _headers_)
 
-        # Get the host needed to be set in the headers for the DRM license request
-        _lic_headers_host_ = re.findall('//(.+?)/', _stream_data_['data']['content']['widevine.proxy'], re.IGNORECASE)[0]
-        logger.debug('Found: _lic_headers_host_ = ' + _lic_headers_host_)
-
-        # Set the headers to be used when requesting license key
-        _lic_headers_ = ''
-        _lic_headers_ = _lic_headers_ + 'Host=' + _lic_headers_host_
-        _lic_headers_ = _lic_headers_ + '&User-Agent=' + vars.__userAgent__
-        _lic_headers_ = _lic_headers_ + '&Referer=' + 'https://www.digionline.ro' + endpoint
-        _lic_headers_ = _lic_headers_ + '&Origin=https://www.digionline.ro'
-        _lic_headers_ = _lic_headers_ + '&Connection=keep-alive'
-        _lic_headers_ = _lic_headers_ + '&Accept-Language=en-US'
-        _lic_headers_ = _lic_headers_ + '&Accept=*/*'
-        _lic_headers_ = _lic_headers_ + '&Accept-Encoding=identity'
-        _lic_headers_ = _lic_headers_ + '&verifypeer=false'
-        logger.debug('Created: _lic_headers_ = ' + _lic_headers_)
-
         # Create a playable item with a path to play.
-        ### See:
-        ###    https://github.com/peak3d/inputstream.adaptive/wiki
-        ###    https://github.com/peak3d/inputstream.adaptive/wiki/Integration
-        ###    https://github.com/emilsvennesson/script.module.inputstreamhelper
+        # See:  https://github.com/peak3d/inputstream.adaptive/issues/131#issuecomment-375059796
+        play_item = xbmcgui.ListItem(path=_stream_url_)
+        play_item.setProperty('inputstreamaddon', 'inputstream.adaptive')
+        play_item.setProperty('inputstream.adaptive.stream_headers', _headers_)
+        play_item.setProperty('inputstream.adaptive.manifest_type', 'hls')
+        play_item.setMimeType('application/vnd.apple.mpegurl')
+        play_item.setContentLookup(False)
 
-        is_helper = inputstreamhelper.Helper('mpd', drm='com.widevine.alpha')
-        if is_helper.check_inputstream():
-          play_item = xbmcgui.ListItem(path=_stream_manifest_url_)
-          play_item.setProperty('inputstreamaddon', 'inputstream.adaptive')
-          play_item.setProperty('inputstream.adaptive.license_type', 'com.widevine.alpha')
-          play_item.setProperty('inputstream.adaptive.manifest_type', 'mpd')
-          play_item.setProperty('inputstream.adaptive.license_key', _stream_data_['data']['content']['widevine.proxy'] + '|' + _lic_headers_ + '|R{SSM}|')
-          play_item.setMimeType('application/dash+xml')
-
-          # Pass the item to the Kodi player.
-          xbmcplugin.setResolvedUrl(_handle, True, listitem=play_item)
-
-      else:
-        # The DigiOnline.ro account configured in the addon's settings is not entitled to play this stream.
-        logger.debug('_stream_data_[\'error\'][\'error_code\'] = ' + str(_stream_data_['error']['error_code']))
-        logger.debug('_stream_data_[\'error\'][\'error_message\'] = ' + _stream_data_['error']['error_message'])
-
-        logger.info('[Error code: ' + str(_stream_data_['error']['error_code']) + ']  => ' + _stream_data_['error']['error_message'])
-        logger.debug('[Error code: ' + str(_stream_data_['error']['error_code']) + ']  => ' + _stream_data_['error']['error_message'])
-
-        xbmcgui.Dialog().ok('[Error code: ' + str(_stream_data_['error']['error_code']) + ']', _stream_data_['error']['error_message'])
+        # Pass the item to the Kodi player.
+        xbmcplugin.setResolvedUrl(_handle, True, listitem=play_item)
 
 
-    # A 'catch-all'-type condition to cover for the unknown cases
-    if known_video_type == 0:
-      logger.info('Don\'t know (yet ?) how to play a \'' + _channel_metadata_['shortcode'] + '\' video type.')
-      logger.debug('Don\'t know (yet ?) how to play a \'' + _channel_metadata_['shortcode'] + '\' video type.')
+      if _channel_metadata_['shortcode'] == 'nagra-livestream':
+        logger.debug('Playing a \'nagra-livestream\' video.')
+
+        # Set the flag so we won't enter in the last if clause
+        known_video_type = 1
+
+        for cookie in vars.__AddonCookieJar__:
+          if cookie.name == "deviceId":
+            _deviceId_ = cookie.value
+            logger.debug(' _deviceID_ = ' + _deviceId_ )
+
+        # Get the stream data (contains the URL for the stream to be played)
+        MyHeaders = {
+          'Host': 'www.digionline.ro',
+          'Referer': 'https://www.digionline.ro' + endpoint,
+          'Origin':  'https://www.digionline.ro',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': vars.__userAgent__,
+          'Accept': '*/*',
+          'Accept-Language': 'en-US',
+          'Accept-Encoding': 'identity',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1'
+        }
+
+        MyPostData = {'id_stream': _channel_metadata_['new-info']['meta']['streamId'], 'quality': 'hq', 'id_device': _deviceId_}
+
+        logger.debug('Cookies: ' + str(list(vars.__AddonCookieJar__)))
+        logger.debug('Headers: ' + str(MyHeaders))
+        logger.debug('MyPostData: ' + str(MyPostData))
+        logger.debug('URL: https://www.digionline.ro' + _channel_metadata_['new-info']['meta']['streamUrl'])
+        logger.debug('Method: POST')
+
+        # Send the POST request
+        _request_ = vars.__AddonSession__.post('https://www.digionline.ro' + _channel_metadata_['new-info']['meta']['streamUrl'], data=MyPostData, headers=MyHeaders)
+
+        logger.debug('Received status code: ' + str(_request_.status_code))
+        logger.debug('Received cookies: ' + str(list(vars.__AddonCookieJar__)))
+        logger.debug('Received headers: ' + str(_request_.headers))
+        logger.debug('Received data: ' + _request_.content)
+
+        _stream_data_ = json.loads(_request_.content)
+        logger.debug('_stream_data_ = ' + str(_stream_data_))
+
+        if _stream_data_['error']['error_code'] == 0:
+          logger.debug('_stream_data_[\'error\'][\'error_code\'] = ' + str(_stream_data_['error']['error_code']))
+
+          # Get the host needed to be set in the headers for the manifest file
+          _headers_host_ = re.findall('//(.+?)/', _stream_data_['data']['content']['stream.manifest.url'], re.IGNORECASE)[0]
+          logger.debug('Found: _headers_host_ = ' + _headers_host_)
+
+         # If needed, append the "https:" to the stream_url
+          if 'https://' not in _stream_data_['data']['content']['stream.manifest.url']:
+            _stream_manifest_url_ = 'https:' + _stream_data_['data']['content']['stream.manifest.url']
+            logger.debug('Created: _stream_manifest_url_ = ' + _stream_manifest_url_)
+          else:
+            _stream_manifest_url_ = _stream_data_['data']['content']['stream.manifest.url']
+            logger.debug('Found: _stream_manifest_url_ = ' + _stream_manifest_url_)
+
+          # Set the headers to be used with imputstream.adaptive
+          _headers_ = ''
+          _headers_ = _headers_ + 'Host=' + _headers_host_
+          _headers_ = _headers_ + '&User-Agent=' + vars.__userAgent__
+          _headers_ = _headers_ + '&Referer=' + 'https://www.digionline.ro' + endpoint
+          _headers_ = _headers_ + '&Origin=https://www.digionline.ro'
+          _headers_ = _headers_ + '&Connection=keep-alive'
+          _headers_ = _headers_ + '&Accept-Language=en-US'
+          _headers_ = _headers_ + '&Accept=*/*'
+          _headers_ = _headers_ + '&Accept-Encoding=identity'
+          logger.debug('Created: _headers_ = ' + _headers_)
+
+          # Get the host needed to be set in the headers for the DRM license request
+          _lic_headers_host_ = re.findall('//(.+?)/', _stream_data_['data']['content']['widevine.proxy'], re.IGNORECASE)[0]
+          logger.debug('Found: _lic_headers_host_ = ' + _lic_headers_host_)
+
+          # Set the headers to be used when requesting license key
+          _lic_headers_ = ''
+          _lic_headers_ = _lic_headers_ + 'Host=' + _lic_headers_host_
+          _lic_headers_ = _lic_headers_ + '&User-Agent=' + vars.__userAgent__
+          _lic_headers_ = _lic_headers_ + '&Referer=' + 'https://www.digionline.ro' + endpoint
+          _lic_headers_ = _lic_headers_ + '&Origin=https://www.digionline.ro'
+          _lic_headers_ = _lic_headers_ + '&Connection=keep-alive'
+          _lic_headers_ = _lic_headers_ + '&Accept-Language=en-US'
+          _lic_headers_ = _lic_headers_ + '&Accept=*/*'
+          _lic_headers_ = _lic_headers_ + '&Accept-Encoding=identity'
+          _lic_headers_ = _lic_headers_ + '&verifypeer=false'
+          logger.debug('Created: _lic_headers_ = ' + _lic_headers_)
+
+          # Create a playable item with a path to play.
+          ### See:
+          ###    https://github.com/peak3d/inputstream.adaptive/wiki
+          ###    https://github.com/peak3d/inputstream.adaptive/wiki/Integration
+          ###    https://github.com/emilsvennesson/script.module.inputstreamhelper
+
+          is_helper = inputstreamhelper.Helper('mpd', drm='com.widevine.alpha')
+          if is_helper.check_inputstream():
+            play_item = xbmcgui.ListItem(path=_stream_manifest_url_)
+            play_item.setProperty('inputstreamaddon', 'inputstream.adaptive')
+            play_item.setProperty('inputstream.adaptive.license_type', 'com.widevine.alpha')
+            play_item.setProperty('inputstream.adaptive.manifest_type', 'mpd')
+            play_item.setProperty('inputstream.adaptive.license_key', _stream_data_['data']['content']['widevine.proxy'] + '|' + _lic_headers_ + '|R{SSM}|')
+            play_item.setMimeType('application/dash+xml')
+
+            # Pass the item to the Kodi player.
+            xbmcplugin.setResolvedUrl(_handle, True, listitem=play_item)
+
+        else:
+          # The DigiOnline.ro account configured in the addon's settings is not entitled to play this stream.
+          logger.debug('_stream_data_[\'error\'][\'error_code\'] = ' + str(_stream_data_['error']['error_code']))
+          logger.debug('_stream_data_[\'error\'][\'error_message\'] = ' + _stream_data_['error']['error_message'])
+
+          logger.info('[Error code: ' + str(_stream_data_['error']['error_code']) + ']  => ' + _stream_data_['error']['error_message'])
+          logger.debug('[Error code: ' + str(_stream_data_['error']['error_code']) + ']  => ' + _stream_data_['error']['error_message'])
+
+          xbmcgui.Dialog().ok('[Error code: ' + str(_stream_data_['error']['error_code']) + ']', _stream_data_['error']['error_message'])
+
+
+      # A 'catch-all'-type condition to cover for the unknown cases
+      if known_video_type == 0:
+        logger.info('Don\'t know (yet ?) how to play a \'' + _channel_metadata_['shortcode'] + '\' video type.')
+        logger.debug('Don\'t know (yet ?) how to play a \'' + _channel_metadata_['shortcode'] + '\' video type.')
 
     logger.debug('Exit function')
 
@@ -837,10 +573,6 @@ def router(paramstring):
             # Display the list of channels in a provided category.
             list_channels(params['category'])
         elif params['action'] == 'play':
-            # Login to DigiOnline for this session
-            #do_login()
-            functions.do_login(vars.__AddonID__, vars.__AddonCookieJar__, vars.__AddonSession__)
-
             # Play a video from the provided URL.
             play_video(params['channel_endpoint'], params['channel_metadata'], params['channel_epgdata'])
         else:

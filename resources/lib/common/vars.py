@@ -41,7 +41,16 @@ __AddonCookieJar__ = ''
 # The session used by addon
 __AddonSession__ = ''
 
+
+# Data caching
 # Directory holding the cached data. 
 __cache_dir__ = 'cached_data'
 
+# File containing the local copy of the list of categories read from DigiOnline.ro
+__categoriesCachedDataFilename__ = 'categories.json'
+# How much time has to pass before reading again from DigiOnline.ro the list of categories.
+__categoriesCachedDataRetentionInterval__ = (24 * 60 * 60)
+
+# How much time has to pass before reading again from DigiOnline.ro the list of channels in a specific category.
+__channelsCachedDataRetentionInterval__ = (24 * 60 * 60)
 
