@@ -43,14 +43,23 @@ __AddonSession__ = ''
 
 
 # Data caching
+
+__minute__ = (1 * 60)
+__day__ = (24 * 60 * 60)
 # Directory holding the cached data. 
 __cache_dir__ = 'cached_data'
 
 # File containing the local copy of the list of categories read from DigiOnline.ro
 __categoriesCachedDataFilename__ = 'categories.json'
+
+# Some sane defaults before being overwritten by the user settings
 # How much time has to pass before reading again from DigiOnline.ro the list of categories.
-__categoriesCachedDataRetentionInterval__ = (24 * 60 * 60)
+__categoriesCachedDataRetentionInterval__ = (30 * __day__)
 
 # How much time has to pass before reading again from DigiOnline.ro the list of channels in a specific category.
-__channelsCachedDataRetentionInterval__ = (24 * 60 * 60)
+__channelsCachedDataRetentionInterval__ = (10 * __day__)
+
+# How much time has to pass before reading again from DigiOnline.ro the EPG data for a channel.
+__EPGDataCachedDataRetentionInterval__ = (10 * __minute__)
+
 

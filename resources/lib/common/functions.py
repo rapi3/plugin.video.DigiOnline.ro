@@ -26,8 +26,6 @@ import cookielib
 import re
 import time
 import json
-
-
 import vars
 
 
@@ -129,7 +127,6 @@ def do_login(NAME, COOKIEJAR, SESSION):
   }
 
   # Setup form data to be sent
-
   MyFormData = {
     'form-login-email': vars.__config_AccountUser__,
     'form-login-password': vars.__config_AccountPassword__
@@ -259,7 +256,127 @@ def get_categories(NAME, COOKIEJAR, SESSION):
   logger.debug('_categories_list_ = ' + str(_categories_list_))
 
   logger.debug('Exit function')
+
   return _categories_list_
+
+
+def update_cached_categories(NAME, COOKIEJAR, SESSION, DATA_DIR):
+  ####
+  #
+  # Updates the file with cached video categories.
+  #
+  # Parameters:
+  #      NAME: Logger name to use for sending the log messages.
+  #      COOKIEJAR: The cookiejar to be used with the given session.
+  #      SESSION: The session to be used for this call
+  #      DATA_DIR: The addon's 'userdata' directory.
+  #
+  ####
+  logger = logging.getLogger(NAME)
+  logger.debug('Enter function')
+
+  categories = get_categories(NAME, COOKIEJAR, SESSION)
+  logger.debug('Received categories = ' + str(categories))
+
+  if not os.path.exists(DATA_DIR + '/' + vars.__cache_dir__ ):
+    os.makedirs(DATA_DIR + '/' + vars.__cache_dir__)
+
+  _cache_data_file_ = os.path.join(DATA_DIR, vars.__cache_dir__, vars.__categoriesCachedDataFilename__)
+  logger.debug('Cached data file: ' + _cache_data_file_)
+
+  _data_file_ = open(_cache_data_file_, 'w')
+  json.dump(categories, _data_file_)
+  _data_file_.close()
+
+  logger.debug('Exit function')
+
+
+def get_cached_categories(NAME, COOKIEJAR, SESSION, DATA_DIR):
+  ####
+  #
+  # Get the list of cached video categories.
+  #
+  # Parameters:
+  #      NAME: Logger name to use for sending the log messages.
+  #      COOKIEJAR: The cookiejar to be used with the given session.
+  #      SESSION: The session to be used for login this call
+  #      DATA_DIR: The addon's 'userdata' directory.
+  #
+  # Return: The list of cached video categories
+  #
+  ####
+  logger = logging.getLogger(NAME)
+  logger.debug('Enter function')
+
+  _return_data_ = {}
+  _return_data_['status'] = {'exit_code': 0, 'error_message': ''}
+  _return_data_['cached_categories'] = ''
+
+  _cached_data_file_ = os.path.join(DATA_DIR, vars.__cache_dir__, vars.__categoriesCachedDataFilename__)
+  logger.debug('Cached data file: ' + _cached_data_file_)
+
+  if os.path.exists(_cached_data_file_) and os.path.getsize(_cached_data_file_) != 0:
+    # The data file with cached categories exists and is not empty.
+    
+    # Get the value (seconds since epoch) of the last modification time for the file containing cached data.
+    _last_update_ = os.path.getmtime(_cached_data_file_)
+    logger.debug('Cached data file last update: ' + time.strftime("%Y%m%d_%H%M%S", time.gmtime(_last_update_)))
+    
+    if _last_update_ > time.time() - vars.__categoriesCachedDataRetentionInterval__:
+      # Cached data is not yet expired.
+      logger.debug('Read cached categories from data file: ' + _cached_data_file_)
+      _data_file_ = open(_cached_data_file_, 'r')
+      _return_data_['cached_categories'] = json.load(_data_file_)
+      _data_file_.close()
+
+    else:
+      # Cached data is expired.
+      # Call the function to update the cached data
+      logger.debug('Cached data requires update.')
+
+      # Login to DigiOnline for this session
+      login = do_login(NAME, COOKIEJAR, SESSION)
+
+      if login['exit_code'] != 0:
+        logger.debug('[Authentication error] => Error message: '+ login['error_message'])
+        _return_data_['status']['exit_code'] = login['exit_code']
+        _return_data_['status']['error_message'] = login['error_message']
+
+      else: 
+        update_cached_categories(NAME, COOKIEJAR, SESSION, DATA_DIR)
+
+        logger.debug('Read cached categories from data file: ' + _cached_data_file_)
+        _data_file_ = open(_cached_data_file_, 'r')
+        _return_data_['cached_categories'] = json.load(_data_file_)
+        _data_file_.close()
+
+  else:
+    # The data file with cached categories does not exist or it is empty.
+
+    # Call the function to update the cached data
+    logger.debug('Cached data file does not exist.')
+
+    # Login to DigiOnline for this session
+    login = do_login(NAME, COOKIEJAR, SESSION)
+
+    if login['exit_code'] != 0:
+      logger.debug('[Authentication error] => Error message: '+ login['error_message'])
+      _return_data_['status']['exit_code'] = login['exit_code']
+      _return_data_['status']['error_message'] = login['error_message']      
+
+    else:
+      update_cached_categories(NAME, COOKIEJAR, SESSION, DATA_DIR)
+
+      logger.debug('Read cached categories from data file: ' + _cached_data_file_)
+      _data_file_ = open(_cached_data_file_, 'r')
+      _return_data_['cached_categories'] = json.load(_data_file_)
+      _data_file_.close()
+
+  
+  logger.debug('_return_data_ = ' + str(_return_data_))
+  logger.debug('Exit function')
+
+  return _return_data_
 
 
 def get_channels(category, NAME, COOKIEJAR, SESSION):
@@ -372,45 +489,10 @@ def get_channels(category, NAME, COOKIEJAR, SESSION):
     logger.debug('Found: _channel_name_ = ' + _ch_meta_['new-info']['meta']['channelName'])
     logger.debug('Found: _channel_streamId_ = ' + str(_ch_meta_['new-info']['meta']['streamId']))
 
-
-
-### TODO: This needs to be moved into its own function so it can be called by update_channel_epg_data()
-
-    # Get the EPG details for the current channel
-    MyHeaders = {
-      'Host': 'www.digionline.ro',
-      'Referer': 'https://www.digionline.ro/' + _channel_endpoint_,
-      'User-Agent': vars.__userAgent__,
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-US',
-      'Accept-Encoding': 'identity',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Cache-Control': 'max-age=0'
-    }
-
-    logger.debug('Cookies: ' + str(list(COOKIEJAR)))
-    logger.debug('Headers: ' + str(MyHeaders))
-    logger.debug('URL: https://www.digionline.ro/epg-xhr?channelId=' + str(_ch_meta_['new-info']['meta']['streamId']))
-    logger.debug('Method: GET')
-
-    # Send the GET request
-    _request_ = SESSION.get('https://www.digionline.ro/epg-xhr?channelId=' + str(_ch_meta_['new-info']['meta']['streamId']), headers=MyHeaders)
-
-    logger.debug('Received status code: ' + str(_request_.status_code))
-    logger.debug('Received cookies: ' + str(list(COOKIEJAR)))
-    logger.debug('Received headers: ' + str(_request_.headers))
-    logger.debug('Received data: ' + str(_request_.content))
-
-    _channel_epgdata_ = _request_.content
-    logger.debug('_channel_epgdata_ = ' + _channel_epgdata_)
-
-
     _channel_record_["endpoint"] = _channel_endpoint_
     _channel_record_["name"] = _ch_meta_['new-info']['meta']['channelName']
     _channel_record_["logo"] = _channel_logo_
     _channel_record_["metadata"] = _channel_metadata_
-    _channel_record_["epgdata"] = _channel_epgdata_
 
     logger.debug('Created: _channel_record_ = ' + str(_channel_record_))
     _channels_.append(_channel_record_)
@@ -419,125 +501,6 @@ def get_channels(category, NAME, COOKIEJAR, SESSION):
   logger.debug('Exit function')
 
   return _channels_
-
-
-def update_cached_categories(NAME, COOKIEJAR, SESSION, DATA_DIR):
-  ####
-  #
-  # Updates the file with cached video categories.
-  #
-  # Parameters:
-  #      NAME: Logger name to use for sending the log messages.
-  #      COOKIEJAR: The cookiejar to be used with the given session.
-  #      SESSION: The session to be used for this call
-  #      DATA_DIR: The addon's 'userdata' directory.
-  #
-  ####
-  logger = logging.getLogger(NAME)
-  logger.debug('Enter function')
-
-  categories = get_categories(NAME, COOKIEJAR, SESSION)
-  logger.debug('Received categories = ' + str(categories))
-
-  if not os.path.exists(DATA_DIR + '/' + vars.__cache_dir__ ):
-    os.makedirs(DATA_DIR + '/' + vars.__cache_dir__)
-
-  _cache_data_file_ = os.path.join(DATA_DIR, vars.__cache_dir__, vars.__categoriesCachedDataFilename__)
-  logger.debug('Cached data file: ' + _cache_data_file_)
-
-  _data_file_ = open(_cache_data_file_, 'w')
-  json.dump(categories, _data_file_)
-  _data_file_.close()
-
-  logger.debug('Exit function')
-
-
-def get_cached_categories(NAME, COOKIEJAR, SESSION, DATA_DIR):
-  ####
-  #
-  # Get the list of cached video categories.
-  #
-  # Parameters:
-  #      NAME: Logger name to use for sending the log messages.
-  #      COOKIEJAR: The cookiejar to be used with the given session.
-  #      SESSION: The session to be used for login this call
-  #      DATA_DIR: The addon's 'userdata' directory.
-  #
-  # Return: The list of cached video categories
-  #
-  ####
-  logger = logging.getLogger(NAME)
-  logger.debug('Enter function')
-
-  _return_data_ = {}
-  _return_data_['status'] = {'exit_code': 0, 'error_message': ''}
-  _return_data_['cached_categories'] = ''
-
-  _cached_data_file_ = os.path.join(DATA_DIR, vars.__cache_dir__, vars.__categoriesCachedDataFilename__)
-  logger.debug('Cached data file: ' + _cached_data_file_)
-
-  if os.path.exists(_cached_data_file_) and os.path.getsize(_cached_data_file_) != 0:
-    # The data file with cached categories exists and is not empty.
-    
-    # Get the value (seconds since epoch) of the last modification time for the file containing cached data.
-    _last_update_ = os.path.getmtime(_cached_data_file_)
-    logger.debug('Cached data file last update: ' + time.strftime("%Y%m%d_%H%M%S", time.gmtime(_last_update_)))
-    
-    if _last_update_ > time.time() - vars.__categoriesCachedDataRetentionInterval__:
-      # Cached data is not yet expired.
-      logger.debug('Read cached categories from data file: ' + _cached_data_file_)
-      _data_file_ = open(_cached_data_file_, 'r')
-      _return_data_['cached_categories'] = json.load(_data_file_)
-      _data_file_.close()
-
-    else:
-      # Cached data is expired.
-      # Call the function update the cached data
-      logger.debug('Cached data requires update.')
-
-      # Login to DigiOnline for this session
-      login = do_login(NAME, COOKIEJAR, SESSION)
-
-      if login['exit_code'] != 0:
-        logger.debug('[Authentication error] => Error message: '+ login['error_message'])
-        _return_data_['status']['exit_code'] = login['exit_code']
-        _return_data_['status']['error_message'] = login['error_message']
-
-      else: 
-        update_cached_categories(NAME, COOKIEJAR, SESSION, DATA_DIR)
-
-        logger.debug('Read cached categories from data file: ' + _cached_data_file_)
-        _data_file_ = open(_cached_data_file_, 'r')
-        _return_data_['cached_categories'] = json.load(_data_file_)
-        _data_file_.close()
-
-  else:
-    # The data file with cached categories does not exist or it is empty.
-
-    # Call the function update the cached data
-    logger.debug('Cached data file does not exist.')
-
-    # Login to DigiOnline for this session
-    login = do_login(NAME, COOKIEJAR, SESSION)
-
-    if login['exit_code'] != 0:
-      logger.debug('[Authentication error] => Error message: '+ login['error_message'])
-      _return_data_['status']['exit_code'] = login['exit_code']
-      _return_data_['status']['error_message'] = login['error_message']      
-
-    else:
-      update_cached_categories(NAME, COOKIEJAR, SESSION, DATA_DIR)
-
-      logger.debug('Read cached categories from data file: ' + _cached_data_file_)
-      _data_file_ = open(_cached_data_file_, 'r')
-      _return_data_['cached_categories'] = json.load(_data_file_)
-      _data_file_.close()
-
-  
-  logger.debug('_return_data_ = ' + str(_return_data_))
-  logger.debug('Exit function')
-
-  return _return_data_
 
 
 def update_cached_channels(category, NAME, COOKIEJAR, SESSION, DATA_DIR):
@@ -613,7 +576,7 @@ def get_cached_channels(category, NAME, COOKIEJAR, SESSION, DATA_DIR):
 
     else:
       # Cached data is expired.
-      # Call the function update the cached data
+      # Call the function to update the cached data
       logger.debug('Cached data requires update.')
 
       # Login to DigiOnline for this session
@@ -635,7 +598,7 @@ def get_cached_channels(category, NAME, COOKIEJAR, SESSION, DATA_DIR):
   else:
     # The data file with cached categories does not exist or it is empty.
 
-    # Call the function update the cached data
+    # Call the function to update the cached data
     logger.debug('Cached data file does not exist.')
 
     # Login to DigiOnline for this session
@@ -653,6 +616,152 @@ def get_cached_channels(category, NAME, COOKIEJAR, SESSION, DATA_DIR):
       _data_file_ = open(_cached_data_file_, 'r')
       _return_data_['cached_channels'] = json.load(_data_file_)
       _data_file_.close()
+
+  logger.debug('_return_data_ = ' + str(_return_data_))
+  logger.debug('Exit function')
+
+  return _return_data_
+
+
+def get_epg_data(STREAM_ID, NAME, SESSION):
+  ####
+  #
+  # Get from DigiOnline.ro the EPG data for the given stream ID
+  #
+  # Parameters:
+  #      STREAM_ID: The ID of the stream
+  #      NAME: Logger name to use for sending the log messages
+  #      SESSION: The session to be used for this call
+  #
+  # Return: The EPG data for the given stream
+  #
+  ####
+  logger = logging.getLogger(NAME)
+  logger.debug('Enter function')
+
+  # Get the EPG details for the current channel
+  MyHeaders = {
+    'Host': 'www.digionline.ro',
+#    'Referer': 'https://www.digionline.ro/' + _channel_endpoint_,
+    'User-Agent': vars.__userAgent__,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US',
+    'Accept-Encoding': 'identity',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Cache-Control': 'max-age=0'
+  }
+
+#  logger.debug('Cookies: ' + str(list(COOKIEJAR)))
+  logger.debug('Headers: ' + str(MyHeaders))
+  logger.debug('URL: https://www.digionline.ro/epg-xhr?channelId=' + str(STREAM_ID))
+  logger.debug('Method: GET')
+
+  # Send the GET request
+  _request_ = SESSION.get('https://www.digionline.ro/epg-xhr?channelId=' + str(STREAM_ID), headers=MyHeaders)
+
+  logger.debug('Received status code: ' + str(_request_.status_code))
+#  logger.debug('Received cookies: ' + str(list(COOKIEJAR)))
+  logger.debug('Received headers: ' + str(_request_.headers))
+  logger.debug('Received data: ' + str(_request_.content))
+
+  _epgdata_ = _request_.content
+  logger.debug('_epgdata_ = ' + _epgdata_)
+
+  logger.debug('Exit function')
+
+  return _epgdata_
+
+
+def update_cached_epg_data(STREAM_ID, NAME, SESSION, DATA_DIR):
+  ####
+  #
+  # Updates the file with cached EPG data for the given stream ID.
+  #
+  # Parameters:
+  #      STREAM_ID: ID of the stream
+  #      NAME: Logger name to use for sending the log messages.
+  #      SESSION: The session to be used for this call
+  #      DATA_DIR: The addon's 'userdata' directory.
+  #
+  ####
+  logger = logging.getLogger(NAME)
+  logger.debug('Enter function')
+
+  _epg_data_ = get_epg_data(STREAM_ID, NAME, SESSION)
+  logger.debug('Received _epg_data_ = ' + str(_epg_data_))
+
+  if not os.path.exists(DATA_DIR + '/' + vars.__cache_dir__ + '/EPG'):
+    os.makedirs(DATA_DIR + '/' + vars.__cache_dir__ + '/EPG')
+
+  _cached_data_file_ = os.path.join(DATA_DIR, vars.__cache_dir__, 'EPG', str(STREAM_ID) + '.json')
+  logger.debug('Cached data file: ' + _cached_data_file_)
+
+  _data_file_ = open(_cached_data_file_, 'w')
+  json.dump(_epg_data_, _data_file_)
+  _data_file_.close()
+
+  logger.debug('Exit function')
+
+
+def get_cached_epg_data(STREAM_ID, NAME, SESSION, DATA_DIR):
+  ####
+  #
+  # Get the cached EPG data for the given streamID.
+  #
+  # Parameters:
+  #      STREAM_ID: ID of the stream
+  #      NAME: Logger name to use for sending the log messages.
+  #      SESSION: The session to be used for this call
+  #      DATA_DIR: The addon's 'userdata' directory.
+  #
+  # Return: The cached EPG data for the given streamID.
+  #
+  ####
+  logger = logging.getLogger(NAME)
+  logger.debug('Enter function')
+
+  _cached_data_file_ = os.path.join(DATA_DIR, vars.__cache_dir__, 'EPG', str(STREAM_ID) + '.json')
+  logger.debug('Cached data file: ' + _cached_data_file_)
+
+  if os.path.exists(_cached_data_file_) and os.path.getsize(_cached_data_file_) != 0:
+    # The data file with cached channels exists and is not empty.
+    
+    # Get the value (seconds since epoch) of the last modification time for the file containing cached data.
+    _last_update_ = os.path.getmtime(_cached_data_file_)
+    logger.debug('Cached data file last update: ' + time.strftime("%Y%m%d_%H%M%S", time.gmtime(_last_update_)))
+    
+    if _last_update_ > time.time() - vars.__EPGDataCachedDataRetentionInterval__:
+      # Cached data is not yet expired.
+      logger.debug('Read cached EPG data from data file: ' + _cached_data_file_)
+      _data_file_ = open(_cached_data_file_, 'r')
+      _return_data_ = json.load(_data_file_)
+      _data_file_.close()
+
+    else:
+      # Cached data is expired.
+      # Call the function to update the cached data
+      logger.debug('Cached data requires update.')
+
+      update_cached_epg_data(STREAM_ID, NAME, SESSION, DATA_DIR)
+
+      logger.debug('Read cached EPG data from data file: ' + _cached_data_file_)
+      _data_file_ = open(_cached_data_file_, 'r')
+      _return_data_ = json.load(_data_file_)
+      _data_file_.close()
+
+  else:
+    # The data file with cached categories does not exist or it is empty.
+
+    # Call the function to update the cached data
+    logger.debug('Cached data file does not exist.')
+
+    update_cached_epg_data(STREAM_ID, NAME, SESSION, DATA_DIR)
+
+    logger.debug('Read cached EPG data from data file: ' + _cached_data_file_)
+    _data_file_ = open(_cached_data_file_, 'r')
+    _return_data_ = json.load(_data_file_)
+    _data_file_.close()
 
   logger.debug('_return_data_ = ' + str(_return_data_))
   logger.debug('Exit function')
